@@ -1,0 +1,24 @@
+server: # 服务器元数据
+  name: YA_MCPServer_Template
+  name_zh: YA MCP 服务器示例
+  author: YA Project
+  description: A simple hello mcp example for MCP Tool.
+  description_zh: MCP Tool 的一个简单示例。
+  version: 0.1.0
+
+transport: # 服务器启动方式配置
+  type: "sse" # 可选值: stdio, sse
+  host: "127.0.0.1" # 仅在 type 为 sse 时有效，表示监听地址，默认为 0.0.0.0
+  port: 12345 # 仅在 type 为 sse 时有效，表示监听端口，默认为 12345
+
+logging: # 日志配置
+  console:
+    enabled: true
+    level: "DEBUG"
+  file:
+    enabled: true
+    level: "DEBUG"
+    path: "logs/%Y-%m-%d_%H-%M-%S.log"
+    rotation: "10 MB"
+    retention: "7 days"
+    compression: "zip"
