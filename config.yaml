@@ -1,17 +1,17 @@
-server: # 服务器元数据
-  name: YA_MCPServer_Template
-  name_zh: YA MCP 服务器示例
-  author: YA Project
-  description: A simple hello mcp example for MCP Tool.
-  description_zh: MCP Tool 的一个简单示例。
+server:
+  name: YA_MCPServer_KnowledgeAgent
+  name_zh: 个性化知识管理智能体
+  author: kislate
+  description: A personalized knowledge management agent with RAG-based intelligent Q&A.
+  description_zh: 基于 RAG 的个性化知识管理智能体，支持知识存储、语义检索和智能问答。
   version: 0.1.0
 
-transport: # 服务器启动方式配置
-  type: "sse" # 可选值: stdio, sse
-  host: "127.0.0.1" # 仅在 type 为 sse 时有效，表示监听地址，默认为 0.0.0.0
-  port: 12345 # 仅在 type 为 sse 时有效，表示监听端口，默认为 12345
+transport:
+  type: "sse"
+  host: "127.0.0.1"
+  port: 12345
 
-logging: # 日志配置
+logging:
   console:
     enabled: true
     level: "DEBUG"
@@ -22,3 +22,20 @@ logging: # 日志配置
     rotation: "10 MB"
     retention: "7 days"
     compression: "zip"
+
+# LLM 配置
+llm:
+  default_provider: "deepseek"
+  deepseek:
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+    max_tokens: 2048
+    temperature: 0.7
+  openai:
+    model: "gpt-3.5-turbo"
+    max_tokens: 2048
+    temperature: 0.7
+
+# 翻译配置
+translate:
+  base_url: "https://api.mymemory.translated.net"

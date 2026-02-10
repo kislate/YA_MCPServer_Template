@@ -12,4 +12,5 @@ dependencies = [
     "mcp[cli]>=1.14.0",
     "pyyaml>=6.0.2",
     "ruff>=0.14.4",
+    "openai>=1.0.0",
 ]
