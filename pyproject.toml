@@ -1,12 +1,13 @@
 [project]
-name = "YA_MCPServer_Template"
+name = "YA_MCPServer_KnowledgeAgent"
 version = "0.1.0"
-description = "YA MCP Server Template"
+description = "A personalized knowledge management agent with RAG."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "art>=6.5",
     "black>=25.9.0",
+    "chromadb>=0.5.0",
     "colorlog>=6.10.1",
     "httpx>=0.28.1",
     "mcp[cli]>=1.14.0",

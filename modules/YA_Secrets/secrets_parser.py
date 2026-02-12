@@ -23,6 +23,7 @@ def load_secrets(path: str = "env.yaml", sops_config: str = ".sops.yaml") -> dic
             capture_output=True,
             text=True,
             check=True,
+            stdin=subprocess.DEVNULL,
         )
         decrypted_yaml = result.stdout
 

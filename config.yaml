@@ -7,9 +7,9 @@ server:
   version: 0.1.0
 
 transport:
-  type: "sse"
-  host: "127.0.0.1"
-  port: 12345
+  type: "stdio"
+  # host: "127.0.0.1"
+  # port: 12345
 
 logging:
   console:
@@ -23,19 +23,31 @@ logging:
     retention: "7 days"
     compression: "zip"
 
-# LLM 配置
+# LLM 配置（仅 DeepSeek）
 llm:
-  default_provider: "deepseek"
   deepseek:
     base_url: "https://api.deepseek.com"
     model: "deepseek-chat"
-    max_tokens: 2048
-    temperature: 0.7
-  openai:
-    model: "gpt-3.5-turbo"
     max_tokens: 2048
     temperature: 0.7
 
 # 翻译配置
 translate:
   base_url: "https://api.mymemory.translated.net"
+
+# ===== 知识管理配置 =====
+knowledge:
+  chromadb:
+    persist_directory: "./data/chromadb"
+    collection_name: "knowledge_base"
+  # Embedding 配置（使用硅基流动 SiliconFlow 的 OpenAI 兼容接口）
+  embedding:
+    provider: "openai"  # 使用 OpenAI 兼容接口
+    base_url: "https://api.siliconflow.cn/v1"
+    model: "BAAI/bge-m3"  # 免费，中英文效果好，1024维
+  chunking:
+    chunk_size: 1000    # 每块最大字符数（bge-m3 支持 8192 token，1000字绰绰有余）
+    chunk_overlap: 100
+  retrieval:
+    top_k: 5
+    min_relevance: 0.3

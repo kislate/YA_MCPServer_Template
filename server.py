@@ -55,11 +55,18 @@ class YA_MCPServer:
             "uvicorn",
             "uvicorn.access",
             "uvicorn.error",
+            "httpx",
+            "httpcore",
+            "chromadb",
+            "posthog",
+            "backoff",
+            "onnxruntime",
         ]
         for name in noisy_loggers:
             lib_logger = logging.getLogger(name)
-            lib_logger.propagate = True
+            lib_logger.propagate = False
             lib_logger.handlers.clear()
+            lib_logger.addHandler(logging.NullHandler())
 
     @exception_handler
     def run_stdio(self):
@@ -137,6 +144,15 @@ class YA_MCPServer:
 setup()
 mcp_server = YA_MCPServer()
 app = mcp_server.app
+
+# 模块加载时同步预热知识库组件（SOPS + ChromaDB + Embedding）
+# 必须在 STDIO transport 启动前完成，否则 subprocess.run / httpx
+# 在 PIPE 环境下可能异常阻塞
+try:
+    from core.knowledge_store import warm_up
+    warm_up()
+except Exception as e:
+    mcp_server.logger.warning(f"知识库预热跳过: {e}")
 
 if __name__ == "__main__":
     mcp_server.start()

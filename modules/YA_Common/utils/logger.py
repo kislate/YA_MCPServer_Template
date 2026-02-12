@@ -27,9 +27,10 @@ def setup_logger():
         logger.removeHandler(handler)
 
     # ------------- 控制台输出 -------------
+    # 使用 stderr 避免 STDIO 传输模式下日志破坏 JSON-RPC 协议
     console_cfg = cfg.get("console", {})
     if console_cfg.get("enabled", True):
-        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(console_cfg.get("level", "INFO").upper())
 
         color_format = (
