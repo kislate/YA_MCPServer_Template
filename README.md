@@ -1,6 +1,6 @@
 ## YA_MCPServer_KnowledgeAgent
 
-基于 RAG（检索增强生成）的个性化知识管理智能体，支持知识存储、语义检索、智能问答和多语言翻译。
+基于 RAG（检索增强生成）的个性化知识管理智能体，支持知识存储、语义检索、智能问答、多语言翻译和网络搜索。
 
 ### 组员信息
 
@@ -23,6 +23,9 @@
 | `smart_chat` | 调用 DeepSeek 大模型进行智能对话 | `message`(用户消息), `system_prompt`(系统提示词,可选) | AI 回复、模型名称、Token 用量 | 不经过知识库，纯 LLM 对话 |
 | `text_translate` | 多语言文本翻译 | `text`(待翻译文本), `target_lang`(目标语言,默认"英文"), `source_lang`(源语言,默认"auto") | 原文、译文、语言对 | 使用 MyMemory 免费 API，免 Key |
 | `get_supported_languages` | 获取翻译支持的语言列表 | 无 | 语言名-代码映射表 | 支持中英日韩法德西俄等 |
+| `web_search` | 使用 DuckDuckGo 搜索网络内容 | `query`(搜索关键词), `max_results`(返回数量,默认5), `region`(搜索区域,默认wt-wt全球) | 搜索结果列表（含排名、标题、URL、摘要） | 免费无需 API Key，支持全球搜索 |
+| `fetch_webpage` | 获取指定网页的完整文本内容 | `url`(网页地址), `timeout`(超时秒数,默认10), `extract_main_content`(提取正文,默认True) | 网页信息（标题、内容、长度） | 自动去除广告、导航等无关内容 |
+| `search_with_content` | 搜索并自动获取首个结果的完整内容 | `query`(搜索关键词), `max_results`(搜索数量,默认3) | 搜索结果 + 首个网页完整内容 | 适合深度了解某个主题 |
 
 ### Resource 列表
 
