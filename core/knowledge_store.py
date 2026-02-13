@@ -296,9 +296,14 @@ async def search_knowledge(
         results = collection.query(**query_params)
 
         formatted = []
+        min_rel = get_config("knowledge.retrieval.min_relevance", 0.3)
         if results and results["ids"] and results["ids"][0]:
             for i in range(len(results["ids"][0])):
                 dist = results["distances"][0][i] if results.get("distances") else 0
+                relevance = round(1 - dist, 4)
+                # 过滤掉低相关度结果（负值或低于阈值）
+                if relevance < min_rel:
+                    continue
                 meta = results["metadatas"][0][i]
                 bid = meta.get("base_id", "")
                 formatted.append({
@@ -307,12 +312,12 @@ async def search_knowledge(
                     "title": meta.get("title", ""),
                     "tags": meta.get("tags", ""),
                     "source": meta.get("source", ""),
-                    "relevance": round(1 - dist, 4),
+                    "relevance": relevance,
                     "base_id": bid,
                     "raw_file": meta.get("raw_file", "") or _get_raw_file_path(bid),
                 })
 
-        logger.info(f"搜索返回 {len(formatted)} 条")
+        logger.info(f"搜索返回 {len(formatted)} 条（已过滤 relevance < {min_rel}）")
         return {"query": query, "total_results": len(formatted), "results": formatted}
 
     try:

@@ -51,3 +51,10 @@ knowledge:
   retrieval:
     top_k: 5
     min_relevance: 0.3
+
+# ===== 记忆库配置 =====
+memory:
+  collection_name: "user_memory"
+  max_items: 50            # 记忆库最大条目数，超出后智能淘汰
+  min_relevance: 0.2       # 记忆搜索最低相关度
+  promote_threshold: 3     # 命中次数达到此值时提示晋升为永久知识

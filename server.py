@@ -151,8 +151,11 @@ app = mcp_server.app
 try:
     from core.knowledge_store import warm_up
     warm_up()
+    # 记忆库预热（复用已初始化的 client 和 embedding）
+    from core.memory_store import warm_up_memory
+    warm_up_memory()
 except Exception as e:
-    mcp_server.logger.warning(f"知识库预热跳过: {e}")
+    mcp_server.logger.warning(f"预热跳过: {e}")
 
 if __name__ == "__main__":
     mcp_server.start()
