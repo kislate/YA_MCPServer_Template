@@ -15,6 +15,9 @@
 | 工具名称 | 功能描述 | 输入 | 输出 | 备注 |
 | :------: | :------: | :--: | :--: | :--: |
 | `add_knowledge` | 添加知识到个人知识库，自动分块建立向量索引，保存原始 Markdown | `content`(知识内容), `title`(标题,可留空AI生成), `tags`(标签,可留空), `source`(来源,可留空) | 知识 ID、标题、标签、分块数、原始文件路径 | title/tags/source 留空时由 DeepSeek 自动生成 |
+| `import_pdf` | 导入 PDF 文档到知识库，自动提取文本内容，按页面分块 | `file_path`(PDF文件路径), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、页数、分块数、文件路径 | 支持学术论文、课件、电子书等 |
+| `import_webpage` | 导入网页为 Markdown 笔记，自动抓取并转换格式 | `url`(网页URL), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、URL、分块数 | 支持技术博客、文档、文章等 |
+| `import_document` | 智能导入文档，自动识别 PDF 或网页并转换 | `source`(文件路径或URL), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、文档类型、元数据 | 通用接口，自动选择解析器 |
 | `search_knowledge` | 语义搜索知识库，基于向量相似度匹配 | `query`(搜索内容), `top_k`(返回条数,默认5), `tag_filter`(标签过滤) | 匹配结果列表（含相似度分数、原始文件路径） | 使用 BAAI/bge-m3 Embedding |
 | `list_knowledge` | 列出知识库中的所有知识条目 | `tag_filter`(标签过滤), `limit`(最大数量,默认20) | 知识条目列表（ID、标题、标签、来源） | - |
 | `delete_knowledge` | 删除指定的知识条目（含所有分块和原始文件） | `knowledge_id`(知识ID) | 删除状态 | - |
@@ -51,9 +54,12 @@
 │   ├── rag_service.py        # RAG 检索增强生成管线（语义检索 → 上下文构建 → LLM 回答）
 │   ├── llm_service.py        # DeepSeek LLM 服务（对话 + AI 元数据自动生成）
 │   ├── document_processor.py # 文本分块（自然断点优先，支持中英文标点）
-│   └── translate_service.py  # MyMemory 翻译服务
-├── tools/                    # MCP 工具定义（9 个工具）
+│   ├── file_parser.py        # 文档解析器（PDF、网页转 Markdown）
+│   ├── translate_service.py  # MyMemory 翻译服务
+│   └── web_search_service.py # DuckDuckGo 搜索 + 网页内容提取
+├── tools/                    # MCP 工具定义（12 个工具）
 │   ├── knowledge_tool.py     # 知识管理工具（增删查）
+│   ├── document_tool.py      # 文档导入工具（PDF、网页）
 │   ├── qa_tool.py            # RAG 问答 + 统计工具
 │   ├── chat_tool.py          # DeepSeek 直接对话工具
 │   └── translate_tool.py     # 翻译工具
