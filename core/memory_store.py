@@ -291,7 +291,10 @@ async def search_memory(
         return items
 
     try:
-        return await asyncio.to_thread(_sync_search)
+        result = await asyncio.to_thread(_sync_search)
+        # 这里加上晋升检查
+        asyncio.create_task(check_and_promote_memories())
+        return result
     except Exception as e:
         logger.warning(f"记忆搜索失败: {e}")
         return []
@@ -401,3 +404,48 @@ def warm_up_memory():
         logger.info("记忆库预热完成")
     except Exception as e:
         logger.warning(f"记忆库预热失败: {e}")
+
+
+async def promote_memory_to_knowledge(mem_item: dict):
+    """
+    命中次数高的记忆自动晋升为知识库条目。
+    """
+    try:
+        from core.knowledge_store import add_knowledge
+        content = mem_item["content"]
+        title = mem_item.get("title", "")
+        tags = mem_item.get("tags", "")
+        # 可根据需要补充 source
+        await add_knowledge(content=content, title=title, tags=tags, source="记忆晋升")
+        logger.info(f"记忆晋升为知识库: {title}")
+    except Exception as e:
+        logger.warning(f"记忆晋升失败: {e}")
+
+
+async def check_and_promote_memories():
+    """
+    检查所有记忆，命中次数高的自动晋升为知识库。
+    """
+    collection = _get_memory_collection()
+    all_data = collection.get()
+    for i in range(len(all_data["ids"])):
+        meta = all_data["metadatas"][i]
+        if meta.get("hit_count", 0) >= 3 and not meta.get("promoted"):
+            mem_item = {
+                "content": all_data["documents"][i],
+                "title": meta.get("title", ""),
+                "tags": meta.get("tags", ""),
+            }
+            await promote_memory_to_knowledge(mem_item)
+            # 标记为已晋升，避免重复
+            try:
+                collection.update(
+                    ids=[all_data["ids"][i]],
+                    metadatas=[{**meta, "promoted": True}],
+                )
+            except Exception:
+                pass
+
+# 在 add_memory 或 search_memory 命中后异步触发
+# 例如在 search_memory 的末尾加：
+# asyncio.create_task(check_and_promote_memories())
