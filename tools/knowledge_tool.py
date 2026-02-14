@@ -62,14 +62,14 @@ async def search_knowledge(
 @YA_MCPServer_Tool(
     name="list_knowledge",
     title="List Knowledge",
-    description="列出知识库中的所有知识条目",
+    description="列出知识库中的所有知识条目（最多 100 个）",
 )
-async def list_knowledge(tag_filter: str = "", limit: int = 20) -> Dict[str, Any]:
+async def list_knowledge(tag_filter: str = "", limit: int = 100) -> Dict[str, Any]:
     """列出知识。
 
     Args:
         tag_filter (str): 标签过滤。
-        limit (int): 最大数量。
+        limit (int): 最大数量（默认 100）。
     Returns:
         Dict[str, Any]: 知识列表。
     """

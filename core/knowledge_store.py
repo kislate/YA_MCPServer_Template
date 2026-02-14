@@ -33,6 +33,7 @@ _cached_sf_key: Optional[str] = None
 _init_lock = threading.Lock()
 
 RAW_DIR = Path("./data/raw")
+ATTACHMENT_DIR = Path("./data/attachments")
 
 
 def _get_embedding_api_key() -> str:
@@ -152,11 +153,73 @@ def _delete_raw_markdown(base_id: str) -> bool:
         return True
     return False
 
+def _delete_all_files(base_id: str) -> None:
+    """删除知识相关的所有文件（Markdown + 附件）。"""
+    _delete_raw_markdown(base_id)
+    _delete_attachment(base_id)
+
 
 def _get_raw_file_path(base_id: str) -> str:
     """获取原始 Markdown 文件路径（如果存在）。"""
     filepath = RAW_DIR / f"{base_id}.md"
     return str(filepath) if filepath.exists() else ""
+
+
+def _save_attachment(
+    base_id: str, source_path: str, doc_type: str = "pdf"
+) -> str:
+    """
+    保存原始文件到 data/attachments/{base_id}.{ext}
+    
+    Args:
+        base_id: 知识 ID
+        source_path: 原始文件路径
+        doc_type: 文档类型（pdf, html 等）
+        
+    Returns:
+        str: 附件保存路径
+    """
+    import shutil
+    
+    ATTACHMENT_DIR.mkdir(parents=True, exist_ok=True)
+    source = Path(source_path)
+    
+    if not source.exists():
+        logger.warning(f"源文件不存在: {source_path}")
+        return ""
+    
+    # 保留原始扩展名或使用 doc_type
+    ext = source.suffix if source.suffix else f".{doc_type}"
+    dest_path = ATTACHMENT_DIR / f"{base_id}{ext}"
+    
+    try:
+        shutil.copy2(source_path, dest_path)
+        logger.info(f"附件已保存: {dest_path}")
+        return str(dest_path)
+    except Exception as e:
+        logger.error(f"保存附件失败: {e}")
+        return ""
+
+
+def _delete_attachment(base_id: str) -> bool:
+    """删除附件文件（支持多种扩展名）。"""
+    deleted = False
+    for ext in [".pdf", ".html", ".docx", ".pptx"]:
+        filepath = ATTACHMENT_DIR / f"{base_id}{ext}"
+        if filepath.exists():
+            filepath.unlink()
+            logger.info(f"附件已删除: {filepath}")
+            deleted = True
+    return deleted
+
+
+def _get_attachment_path(base_id: str) -> str:
+    """获取附件路径（如果存在）。"""
+    for ext in [".pdf", ".html", ".docx", ".pptx"]:
+        filepath = ATTACHMENT_DIR / f"{base_id}{ext}"
+        if filepath.exists():
+            return str(filepath)
+    return ""
 
 
 async def add_knowledge(
@@ -321,13 +384,13 @@ async def search_knowledge(
         raise RuntimeError(f"搜索失败: {e}")
 
 
-async def list_knowledge(tag_filter: str = "", limit: int = 20) -> Dict[str, Any]:
+async def list_knowledge(tag_filter: str = "", limit: int = 100) -> Dict[str, Any]:
     """
     列出知识条目。
 
     Args:
         tag_filter (str): 标签过滤。
-        limit (int): 最大返回数。
+        limit (int): 最大返回数（默认 100，足够显示所有条目）。
 
     Returns:
         Dict[str, Any]: 知识列表。
@@ -335,7 +398,9 @@ async def list_knowledge(tag_filter: str = "", limit: int = 20) -> Dict[str, Any
     def _sync_list():
         """同步执行，放到线程池避免阻塞事件循环。"""
         collection = get_collection()
-        get_params = {"limit": limit}
+        total_count = collection.count()
+        # 获取所有分块以便去重，但限制最大数量
+        get_params = {"limit": min(limit * 10, total_count) if total_count > 0 else limit}
         if tag_filter:
             get_params["where"] = {"tags": {"$contains": tag_filter}}
 
@@ -345,7 +410,7 @@ async def list_knowledge(tag_filter: str = "", limit: int = 20) -> Dict[str, Any
         for i in range(len(results["ids"])):
             meta = results["metadatas"][i]
             bid = meta.get("base_id", results["ids"][i])
-            if bid not in seen:
+            if bid not in seen and len(seen) < limit:
                 preview = results["documents"][i]
                 seen[bid] = {
                     "id": bid,
@@ -357,7 +422,7 @@ async def list_knowledge(tag_filter: str = "", limit: int = 20) -> Dict[str, Any
                     "raw_file": meta.get("raw_file", "") or _get_raw_file_path(bid),
                 }
 
-        return {"total_items": len(seen), "total_chunks": collection.count(), "items": list(seen.values())}
+        return {"total_items": len(seen), "total_chunks": total_count, "items": list(seen.values())}
 
     try:
         return await asyncio.to_thread(_sync_list)
@@ -384,10 +449,11 @@ async def delete_knowledge(knowledge_id: str) -> Dict[str, str]:
             return {"message": f"未找到 ID '{knowledge_id}'"}
 
         collection.delete(ids=results["ids"])
-        raw_deleted = _delete_raw_markdown(knowledge_id)
-        msg = f"已删除 '{knowledge_id}'，共 {len(results['ids'])} 个片段"
-        if raw_deleted:
-            msg += "，原始 Markdown 文件已删除"
+        
+        # 删除所有相关文件（Markdown + 附件）
+        _delete_all_files(knowledge_id)
+        
+        msg = f"已删除 '{knowledge_id}'，共 {len(results['ids'])} 个片段（包括原始文件和附件）"
         return {"message": msg}
 
     try:
