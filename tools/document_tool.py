@@ -1,6 +1,8 @@
 """
 文档导入工具，包括：
 - import_pdf: 导入 PDF 文档
+- import_pptx: 导入 PPTX 演示文稿
+- import_docx: 导入 DOCX Word 文档
 - import_webpage: 导入网页笔记
 - import_document: 通用文档导入（自动识别类型）
 """
@@ -36,8 +38,8 @@ async def import_pdf(
     except ImportError as e:
         raise RuntimeError(f"导入失败: {e}")
     
-    # 清理文件路径（去除空格和换行符）
-    file_path = file_path.strip()
+    # 清理文件路径（去除空格、换行符和引号）
+    file_path = file_path.strip().strip('"').strip("'")
     
     # 解析 PDF
     parser = PDFParser()
@@ -73,6 +75,141 @@ async def import_pdf(
     result['original_path'] = parsed['metadata']['file_path']
     result['attachment_path'] = attachment_path if attachment_path else "未保存"
     
+    return result
+
+
+@YA_MCPServer_Tool(
+    name="import_pptx",
+    title="Import PPTX Presentation",
+    description="导入 PPTX 演示文稿到知识库。自动提取幻灯片文本和表格内容，转换为 Markdown 格式建立向量索引。支持课件、报告、培训材料等",
+)
+async def import_pptx(
+    file_path: str,
+    title: str = "",
+    tags: str = "",
+) -> Dict[str, Any]:
+    """
+    导入 PPTX 演示文稿到知识库
+
+    Args:
+        file_path (str): PPTX 文件路径（绝对路径或相对路径）
+        title (str): 文档标题（留空则从文件名提取）
+        tags (str): 标签（逗号分隔，留空则 AI 自动生成）
+
+    Returns:
+        Dict[str, Any]: 导入结果，包含知识 ID、幻灯片数、分块数等
+    """
+    try:
+        from core.file_parser import PPTXParser
+        from core.knowledge_store import add_knowledge
+    except ImportError as e:
+        raise RuntimeError(f"导入失败: {e}")
+
+    # 清理文件路径（去除空格、换行符和引号）
+    file_path = file_path.strip().strip('"').strip("'")
+
+    # 解析 PPTX
+    parser = PPTXParser()
+    if not parser.can_handle(file_path):
+        raise ValueError(f"文件类型错误: {file_path} 不是 PPTX 文件")
+
+    parsed = await parser.parse(file_path)
+
+    # 构建来源信息
+    source = f"PPTX 演示文稿：{parsed['metadata']['file_path']}"
+
+    # 使用解析出的标题或用户指定的标题
+    final_title = title if title else parsed['title']
+
+    # 添加到知识库
+    result = await add_knowledge(
+        content=parsed['content'],
+        title=final_title,
+        tags=tags,
+        source=source
+    )
+
+    # 保存原始 PPTX 文件副本
+    from core.knowledge_store import _save_attachment
+    attachment_path = _save_attachment(
+        base_id=result['id'],
+        source_path=parsed['metadata']['file_path'],
+        doc_type='pptx'
+    )
+
+    # 添加 PPTX 特有的元数据
+    result['pptx_slides'] = parsed['metadata']['slides']
+    result['original_path'] = parsed['metadata']['file_path']
+    result['attachment_path'] = attachment_path if attachment_path else "未保存"
+
+    return result
+
+
+@YA_MCPServer_Tool(
+    name="import_docx",
+    title="Import DOCX Document",
+    description="导入 DOCX Word 文档到知识库。自动提取段落、标题和表格内容，保留文档结构转换为 Markdown 格式。支持报告、论文、手册等",
+)
+async def import_docx(
+    file_path: str,
+    title: str = "",
+    tags: str = "",
+) -> Dict[str, Any]:
+    """
+    导入 DOCX Word 文档到知识库
+
+    Args:
+        file_path (str): DOCX 文件路径（绝对路径或相对路径）
+        title (str): 文档标题（留空则从文件名或文档标题提取）
+        tags (str): 标签（逗号分隔，留空则 AI 自动生成）
+
+    Returns:
+        Dict[str, Any]: 导入结果，包含知识 ID、段落数、表格数等
+    """
+    try:
+        from core.file_parser import DOCXParser
+        from core.knowledge_store import add_knowledge
+    except ImportError as e:
+        raise RuntimeError(f"导入失败: {e}")
+
+    # 清理文件路径（去除空格、换行符和引号）
+    file_path = file_path.strip().strip('"').strip("'")
+
+    # 解析 DOCX
+    parser = DOCXParser()
+    if not parser.can_handle(file_path):
+        raise ValueError(f"文件类型错误: {file_path} 不是 DOCX 文件")
+
+    parsed = await parser.parse(file_path)
+
+    # 构建来源信息
+    source = f"DOCX 文档：{parsed['metadata']['file_path']}"
+
+    # 使用解析出的标题或用户指定的标题
+    final_title = title if title else parsed['title']
+
+    # 添加到知识库
+    result = await add_knowledge(
+        content=parsed['content'],
+        title=final_title,
+        tags=tags,
+        source=source
+    )
+
+    # 保存原始 DOCX 文件副本
+    from core.knowledge_store import _save_attachment
+    attachment_path = _save_attachment(
+        base_id=result['id'],
+        source_path=parsed['metadata']['file_path'],
+        doc_type='docx'
+    )
+
+    # 添加 DOCX 特有的元数据
+    result['docx_paragraphs'] = parsed['metadata']['paragraphs']
+    result['docx_tables'] = parsed['metadata']['tables']
+    result['original_path'] = parsed['metadata']['file_path']
+    result['attachment_path'] = attachment_path if attachment_path else "未保存"
+
     return result
 
 
@@ -155,7 +292,7 @@ async def import_webpage(
 @YA_MCPServer_Tool(
     name="import_document",
     title="Import Document (Auto-detect Type)",
-    description="智能导入文档到知识库，自动识别类型（PDF 或网页）并转换为 Markdown。支持本地 PDF 文件和在线网页",
+    description="智能导入文档到知识库，自动识别类型（PDF、PPTX、DOCX 或网页）并转换为 Markdown。支持本地文件和在线网页",
 )
 async def import_document(
     source: str,
@@ -197,6 +334,10 @@ async def import_document(
     doc_type = parsed['metadata']['doc_type']
     if doc_type == 'pdf':
         source_info = f"PDF 文档：{parsed['metadata']['file_path']}"
+    elif doc_type == 'pptx':
+        source_info = f"PPTX 演示文稿：{parsed['metadata']['file_path']}"
+    elif doc_type == 'docx':
+        source_info = f"DOCX 文档：{parsed['metadata']['file_path']}"
     elif doc_type == 'webpage':
         source_info = f"网页：{parsed['metadata']['url']}"
     else:
