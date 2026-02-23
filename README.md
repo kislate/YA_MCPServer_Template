@@ -25,39 +25,20 @@ cd YA_MCPServer_Template
 uv sync
 ```
 
-**3. 配置 API 密钥**
-
-编辑 `env.yaml`，填入以下密钥（本地开发可直接写明文，加密方式见 [docs/encrypt.md](docs/encrypt.md)）：
-
-| 密钥名 | 用途 | 获取地址 |
-| :----: | :--: | :------: |
-| `deepseek_api_key` | 大模型对话 / RAG 问答 / 翻译 | [platform.deepseek.com](https://platform.deepseek.com/) |
-| `siliconflow_api_key` | BAAI/bge-m3 Embedding 向量化 | [cloud.siliconflow.cn](https://cloud.siliconflow.cn/) |
-
-**4. 启动服务器**
+**3. MCP调试**
 ```bash
-uv run server.py
+uv run mcp dev server.py
 ```
 
-默认使用 STDIO 模式。如需 SSE（HTTP）模式，在 `config.yaml` 中将 `transport.type` 改为 `sse` 并配置 `host` / `port`。
+**4. 小提醒**
+- 初次使用可以先用 `list_knowledge` 查看现有知识库（初始状态包含部分示例数据）
+- 用 `import_document` 可直接传入本地文件路径（支持 PDF / PPTX / DOCX）或网页 URL，无需区分格式；导入时会自动生成 AI 摘要，速度稍慢属正常现象，当然，也可以手动关闭生成ai摘要，就在调试界面那里有一个小按钮。
+- 可以在`docs`文件夹下选取一些文件来作为测试样例。
+- 想直接写 Markdown 笔记的话，用 `add_knowledge` 粘贴内容即可，标题、标签、来源均可留空由 AI 自动生成
+- 想一次导入一整个文件夹的资料，用 `batch_import_documents` 并指定文件夹路径
+- 知识添加完成后，推荐用 `ask_knowledge` 提问，会自动检索知识库并标注引用来源；纯闲聊或无需知识库的场景用 `smart_chat` 即可
+- 想搜索某个知识的`id`直接用 `search_knowledge` 输入关键词，返回结果会包含原始 Markdown 文件路径，打开即可查看完整内容
 
-**5. 接入 MCP 客户端（以 Claude Desktop / Cursor 为例）**
-```json
-{
-  "mcpServers": {
-    "KnowledgeAgent": {
-      "command": "uv",
-      "args": ["run", "server.py"],
-      "cwd": "/path/to/YA_MCPServer_Template"
-    }
-  }
-}
-```
-
-**6. 调试（可选）**
-```bash
-npx @modelcontextprotocol/inspector uv run server.py
-```
 
 ### Tool 列表
 
@@ -71,12 +52,12 @@ npx @modelcontextprotocol/inspector uv run server.py
 | `delete_knowledge` | 删除指定的知识条目（含所有分块和原始文件） | `knowledge_id`(知识ID) | 删除状态 | - |
 | `export_knowledge` | 将知识库导出为本地文件 | `tag_filter`(标签过滤), `fmt`(格式: markdown/zip,默认markdown), `output_path`(输出路径,可留空) | 导出文件路径、条目数 | zip 格式含原始附件 |
 | `update_user_profile` | 更新用户偏好画像，影响 RAG 问答个性化 | `field`(字段: interests/level/preferences), `value`(新值) | 更新后的画像 | 列表字段用逗号分隔 |
-| `import_pdf` | 导入 PDF 文档到知识库，自动提取文本内容，按页面分块 | `file_path`(PDF文件路径), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、页数、分块数、文件路径 | 支持学术论文、课件、电子书等 |
-| `import_pptx` | 导入 PPTX 演示文稿到知识库，提取幻灯片文本和表格 | `file_path`(PPTX文件路径), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、幻灯片数、分块数 | 支持课件、报告、培训材料等 |
-| `import_docx` | 导入 DOCX Word 文档到知识库，保留文档结构 | `file_path`(DOCX文件路径), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、段落数、表格数 | 支持报告、论文、手册等 |
-| `import_webpage` | 导入网页为 Markdown 笔记，自动抓取并转换格式 | `url`(网页URL), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、标题、URL、分块数 | 支持技术博客、文档、文章等 |
-| `import_document` | 智能导入文档，自动识别 PDF / PPTX / DOCX / 网页 | `source`(文件路径或URL), `title`(标题,可留空), `tags`(标签,可留空) | 知识 ID、文档类型、元数据 | 通用接口，自动选择解析器 |
-| `batch_import_documents` | 批量导入整个文件夹内的文档到知识库 | `folder_path`(文件夹路径), `tags`(标签,可留空), `recursive`(递归子目录,默认False), `file_types`(格式过滤,可留空) | 成功列表、失败列表、汇总统计 | 支持 pdf/pptx/docx |
+| `import_pdf` | 导入 PDF 文档到知识库，自动提取文本内容，按页面分块 | `file_path`(PDF文件路径), `title`(标题,可留空), `tags`(标签,可留空), `summarize`(默认True) | 知识 ID、标题、页数、分块数、文件路径 | `summarize=False` 可跳过 AI 摘要加快导入 |
+| `import_pptx` | 导入 PPTX 演示文稿到知识库，提取幻灯片文本和表格 | `file_path`(PPTX文件路径), `title`(标题,可留空), `tags`(标签,可留空), `summarize`(默认True) | 知识 ID、标题、幻灯片数、分块数 | `summarize=False` 可跳过 AI 摘要加快导入 |
+| `import_docx` | 导入 DOCX Word 文档到知识库，保留文档结构 | `file_path`(DOCX文件路径), `title`(标题,可留空), `tags`(标签,可留空), `summarize`(默认True) | 知识 ID、标题、段落数、表格数 | `summarize=False` 可跳过 AI 摘要加快导入 |
+| `import_webpage` | 导入网页为 Markdown 笔记，自动抓取并转换格式 | `url`(网页URL), `title`(标题,可留空), `tags`(标签,可留空), `summarize`(默认True) | 知识 ID、标题、URL、分块数 | `summarize=False` 可跳过 AI 摘要加快导入 |
+| `import_document` | 智能导入文档，自动识别 PDF / PPTX / DOCX / 网页 | `source`(文件路径或URL), `title`(标题,可留空), `tags`(标签,可留空), `summarize`(默认True) | 知识 ID、文档类型、元数据 | `summarize=False` 可跳过 AI 摘要加快导入 |
+| `batch_import_documents` | 批量导入整个文件夹内的文档到知识库 | `folder_path`(文件夹路径), `tags`(标签,可留空), `recursive`(递归子目录,默认False), `file_types`(格式过滤,可留空), `summarize`(默认True) | 成功列表、失败列表、汇总统计 | 批量导入时建议 `summarize=False` |
 | `ask_knowledge` | RAG 智能问答：自动检索相关知识 → 大模型生成回答 → 标注来源 | `question`(问题), `top_k`(检索片段数,默认5), `provider`(LLM提供商) | AI 回答、引用来源、Token 用量 | 无匹配知识时直接由 DeepSeek 回答 |
 | `knowledge_stats` | 获取知识库统计信息 | 无 | 条目数、分块数、标签分布、来源分布 | - |
 | `smart_chat` | 调用 DeepSeek 大模型进行智能对话 | `message`(用户消息), `system_prompt`(系统提示词,可选) | AI 回复、模型名称、Token 用量 | 不经过知识库，纯 LLM 对话 |
@@ -150,6 +131,13 @@ npx @modelcontextprotocol/inspector uv run server.py
 | `knowledge.retrieval` | 检索参数（top_k=5 / min_relevance=0.3） |
 
 ### 其他需要说明的情况
+
+**注意事项：**
+
+- **首次启动较慢**：首次运行时需初始化 ChromaDB 并建立 Embedding 缓存，约需 10~30 秒，属正常现象，请耐心等待
+- **需要安装 Node.js**：使用 MCP Inspector 调试工具（`npx @modelcontextprotocol/inspector`）时需要提前安装 [Node.js](https://nodejs.org/)
+- **推荐安装 MCP Inspector**：可通过浏览器可视化测试所有工具，运行 `npx @modelcontextprotocol/inspector uv run server.py` 后访问 `http://localhost:5173`, 或者直接`uv run mcp dev server.py`
+- **网络环境**：DuckDuckGo 搜索在部分网络下可能受限，建议配置代理后使用 `web_search` / `search_with_content` 等工具
 
 **SOPS 密钥变量：**
 
