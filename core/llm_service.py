@@ -1,8 +1,8 @@
 """
-LLM 服务模块 - DeepSeek
+LLM 服务模块 - 支持多 Provider
 
 提供以下功能：
-- chat_with_llm: 调用 DeepSeek API 进行对话
+- chat_with_llm: 调用 LLM API 进行对话（支持 deepseek / openai / siliconflow）
 - generate_metadata: 调用 AI 自动生成知识的标题、标签、来源类型
 - summarize_content: 调用 AI 对文档内容生成结构化摘要总结
 """
@@ -17,8 +17,69 @@ from modules.YA_Common.utils.logger import get_logger
 
 logger = get_logger("llm_service")
 
-# 缓存 API key，避免每次调用都解密 SOPS
-_cached_api_key: Optional[str] = None
+# 每个 provider 的 API Key 缓存
+_api_key_cache: Dict[str, str] = {}
+
+# 每个 provider 的默认配置
+_PROVIDER_DEFAULTS = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "env_var": "DEEPSEEK_API_KEY",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "env_var": "OPENAI_API_KEY",
+    },
+    "siliconflow": {
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "deepseek-ai/DeepSeek-V3",
+        "env_var": "SILICONFLOW_API_KEY",
+    },
+}
+
+
+def _get_api_key_for_provider(provider: str) -> str:
+    """获取指定 provider 的 API Key，优先 SOPS，其次环境变量。结果按 provider 缓存。"""
+    if provider in _api_key_cache:
+        return _api_key_cache[provider]
+
+    sops_key_name = f"{provider}_api_key"
+    env_var = _PROVIDER_DEFAULTS.get(provider, {}).get("env_var", f"{provider.upper()}_API_KEY")
+
+    # 优先 SOPS
+    try:
+        from modules.YA_Secrets.secrets_parser import get_secret
+        key = get_secret(sops_key_name)
+        if key:
+            logger.debug(f"从 SOPS 获取 {provider} API Key 成功")
+            _api_key_cache[provider] = key
+            return key
+    except Exception as e:
+        logger.warning(f"SOPS 获取 {provider} API Key 失败: {e}")
+
+    # 备用：环境变量
+    key = os.environ.get(env_var)
+    if key:
+        logger.debug(f"从环境变量 {env_var} 获取 {provider} API Key")
+        _api_key_cache[provider] = key
+        return key
+
+    raise RuntimeError(
+        f"未找到 {provider} API Key，请将其加密到 env.yaml（key: {sops_key_name}）或设置环境变量 {env_var}"
+    )
+
+
+def _get_provider_config(provider: str) -> Dict[str, Any]:
+    """从 config.yaml 和内置默认值获取 provider 配置。"""
+    defaults = _PROVIDER_DEFAULTS.get(provider, {})
+    return {
+        "base_url": get_config(f"llm.{provider}.base_url", defaults.get("base_url", "")),
+        "model": get_config(f"llm.{provider}.model", defaults.get("model", "")),
+        "max_tokens": get_config(f"llm.{provider}.max_tokens", 2048),
+        "temperature": get_config(f"llm.{provider}.temperature", 0.7),
+    }
 
 
 async def chat_with_llm(
@@ -27,42 +88,30 @@ async def chat_with_llm(
     provider: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    调用 DeepSeek API 进行对话。
+    调用 LLM API 进行对话。支持 deepseek / openai / siliconflow。
 
     Args:
         message (str): 用户消息。
         system_prompt (Optional[str]): 系统提示词。
-        provider (Optional[str]): 保留参数，当前仅支持 "deepseek"。
+        provider (Optional[str]): LLM 提供商。留空则读取 config.yaml 的 llm.default_provider。
 
     Returns:
-        Dict[str, Any]: 对话结果，包含回复内容和 Token 使用信息。
-
-    Raises:
-        RuntimeError: 如果 API 调用失败。
-
-    Example:
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "reply": "Python 的装饰器是...",
-            "usage": {"prompt_tokens": 150, "completion_tokens": 200}
-        }
+        Dict[str, Any]: {"provider", "model", "reply", "usage"}
     """
-    provider = "deepseek"
-
-    logger.info(f"调用 DeepSeek，消息长度: {len(message)}")
+    effective_provider = provider or get_config("llm.default_provider", "deepseek")
+    logger.info(f"调用 LLM [{effective_provider}]，消息长度: {len(message)}")
 
     try:
-        api_key = await asyncio.to_thread(_get_api_key)
-        base_url = get_config("llm.deepseek.base_url", "https://api.deepseek.com")
-        model = get_config("llm.deepseek.model", "deepseek-chat")
-        max_tokens = get_config("llm.deepseek.max_tokens", 2048)
-        temperature = get_config("llm.deepseek.temperature", 0.7)
+        api_key = await asyncio.to_thread(_get_api_key_for_provider, effective_provider)
+        cfg = _get_provider_config(effective_provider)
     except Exception as e:
         raise RuntimeError(f"读取 LLM 配置失败: {e}")
 
+    if not cfg["base_url"] or not cfg["model"]:
+        raise RuntimeError(f"provider '{effective_provider}' 的 base_url 或 model 未配置")
+
     try:
-        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=cfg["base_url"])
 
         messages: List[Dict[str, str]] = []
         if system_prompt:
@@ -70,10 +119,10 @@ async def chat_with_llm(
         messages.append({"role": "user", "content": message})
 
         response = await client.chat.completions.create(
-            model=model,
+            model=cfg["model"],
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            max_tokens=cfg["max_tokens"],
+            temperature=cfg["temperature"],
         )
 
         reply = response.choices[0].message.content
@@ -81,45 +130,16 @@ async def chat_with_llm(
             "prompt_tokens": response.usage.prompt_tokens,
             "completion_tokens": response.usage.completion_tokens,
         }
-
-        logger.info(f"DeepSeek 回复成功，Token: {usage}")
-
-        return {
-            "provider": provider,
-            "model": model,
-            "reply": reply,
-            "usage": usage,
-        }
+        logger.info(f"LLM [{effective_provider}] 回复成功，Token: {usage}")
+        return {"provider": effective_provider, "model": cfg["model"], "reply": reply, "usage": usage}
     except Exception as e:
-        raise RuntimeError(f"DeepSeek 调用失败: {e}")
+        raise RuntimeError(f"LLM [{effective_provider}] 调用失败: {e}")
 
 
+# 展院兼容旧代码的内部帮气函数
 def _get_api_key() -> str:
-    """从 SOPS 获取 DeepSeek API Key，环境变量作为备用。结果缓存。"""
-    global _cached_api_key
-    if _cached_api_key:
-        return _cached_api_key
-
-    # 优先从 SOPS 获取
-    try:
-        from modules.YA_Secrets.secrets_parser import get_secret
-        key = get_secret("deepseek_api_key")
-        if key:
-            logger.debug("从 SOPS 获取 DeepSeek API Key 成功")
-            _cached_api_key = key
-            return key
-    except Exception as e:
-        logger.warning(f"SOPS 获取 API Key 失败: {e}")
-
-    # 备用：环境变量
-    key = os.environ.get("DEEPSEEK_API_KEY")
-    if key:
-        logger.debug("从环境变量获取 DeepSeek API Key")
-        return key
-
-    raise RuntimeError(
-        "未找到 DeepSeek API Key，请通过 SOPS 加密到 env.yaml 或设置环境变量 DEEPSEEK_API_KEY"
-    )
+    """密封兼容：为 generate_metadata / summarize_content 提供 deepseek key。"""
+    return _get_api_key_for_provider("deepseek")
 
 
 METADATA_SYSTEM_PROMPT = """你是一个知识管理助手。根据用户提供的文本内容，生成以下元数据：

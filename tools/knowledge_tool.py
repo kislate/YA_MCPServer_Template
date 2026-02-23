@@ -3,10 +3,15 @@
 - add_knowledge: 添加知识
 - search_knowledge: 语义搜索
 - list_knowledge: 列出知识
+- get_knowledge: 获取笔记原文
+- update_knowledge: 更新知识内容/标题/标签
 - delete_knowledge: 删除知识
+- export_knowledge: 导出知识库为文件
+- knowledge_stats: 知识库统计
+- update_user_profile: 更新用户偏好画像
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from tools import YA_MCPServer_Tool
 
 
@@ -118,3 +123,81 @@ async def delete_knowledge(knowledge_id: str) -> Dict[str, str]:
     except ImportError as e:
         raise RuntimeError(f"导入失败: {e}")
     return await _del(knowledge_id=knowledge_id)
+
+
+@YA_MCPServer_Tool(
+    name="update_knowledge",
+    title="Update Knowledge",
+    description="更新知识条目的内容、标题或标签。仅改标题/标签时不会重新向量化（快速）；改内容时自动重新分块索引（保留原 ID）",
+)
+async def update_knowledge(
+    knowledge_id: str,
+    content: Optional[str] = None,
+    title: Optional[str] = None,
+    tags: Optional[str] = None,
+) -> Dict[str, Any]:
+    """更新知识内容/标题/标签。
+
+    Args:
+        knowledge_id (str): 知识 ID。
+        content (Optional[str]): 新的 Markdown 内容（留空则不修改内容）。
+        title (Optional[str]): 新标题（留空则不修改）。
+        tags (Optional[str]): 新标签，逗号分隔（留空则不修改）。
+    Returns:
+        Dict[str, Any]: 更新结果。
+    """
+    try:
+        from core.knowledge_store import update_knowledge as _update
+    except ImportError as e:
+        raise RuntimeError(f"导入失败: {e}")
+    return await _update(knowledge_id=knowledge_id, content=content, title=title, tags=tags)
+
+
+@YA_MCPServer_Tool(
+    name="export_knowledge",
+    title="Export Knowledge",
+    description="将知识库导出为本地文件。支持合并 Markdown 单文件或 ZIP 压缩包（每条一个 md + 原始附件），可按标签过滤",
+)
+async def export_knowledge(
+    tag_filter: str = "",
+    fmt: str = "markdown",
+    output_path: str = "",
+) -> Dict[str, Any]:
+    """导出知识库。
+
+    Args:
+        tag_filter (str): 标签过滤（留空 = 全部导出）。
+        fmt (str): 格式，"markdown"（默认，合并为单文件）或 "zip"（每条+附件打包）。
+        output_path (str): 输出路径（留空则自动生成到 data/exports/）。
+    Returns:
+        Dict[str, Any]: 含 output_path 和 count 的导出结果。
+    """
+    try:
+        from core.knowledge_store import export_knowledge as _export
+    except ImportError as e:
+        raise RuntimeError(f"导入失败: {e}")
+    return await _export(tag_filter=tag_filter, output_path=output_path, fmt=fmt)
+
+
+@YA_MCPServer_Tool(
+    name="update_user_profile",
+    title="Update User Profile",
+    description="更新用户偏好画像，如兴趣领域、技术水平、回答偏好。这些信息会被 RAG 问答自动引用，提供更个性化的回答",
+)
+async def update_user_profile(
+    field: str,
+    value: str,
+) -> Dict[str, Any]:
+    """更新用户画像字段。
+
+    Args:
+        field (str): 字段名，可选：interests（兴趣列表，逗号分隔）、level（技术水平）、preferences（偏好列表，逗号分隔）。
+        value (str): 新值。对于列表字段请用逗号分隔，如 "Python,AI,量化交易"。
+    Returns:
+        Dict[str, Any]: 更新后的画像。
+    """
+    from core.user_profile_service import update_profile_field
+    # 列表字段自动拆分
+    list_fields = {"interests", "preferences"}
+    parsed_value = [v.strip() for v in value.split(",") if v.strip()] if field in list_fields else value
+    return update_profile_field(field, parsed_value)

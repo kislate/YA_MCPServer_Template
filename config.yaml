@@ -23,16 +23,30 @@ logging:
     retention: "7 days"
     compression: "zip"
 
-# LLM 配置（仅 DeepSeek）
+# LLM 配置
 llm:
+  default_provider: "deepseek"   # 默认 provider，可改为 openai / siliconflow
   deepseek:
     base_url: "https://api.deepseek.com"
     model: "deepseek-chat"
-    max_tokens: 2048
+    max_tokens: 1024       # RAG 问答 1024 够用，减少等待时间
+    temperature: 0.7
+  openai:
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    max_tokens: 1024
+    temperature: 0.7
+  siliconflow:
+    base_url: "https://api.siliconflow.cn/v1"
+    model: "deepseek-ai/DeepSeek-V3"  # 速度比 deepseek.com 快，可设为 default_provider
+    max_tokens: 1024
     temperature: 0.7
 
 # 翻译配置
 translate:
+  use_llm: true                          # true=优先用 LLM 翻译，false=仅用 MyMemory
+  llm_provider: "deepseek"               # 翻译用的 LLM provider
+  mymemory_fallback: true                # LLM 失败时降级到 MyMemory
   base_url: "https://api.mymemory.translated.net"
 
 # ===== 知识管理配置 =====
@@ -51,3 +65,16 @@ knowledge:
   retrieval:
     top_k: 5
     min_relevance: 0.3
+  export:
+    output_dir: "./data/exports"
+
+# RAG 设置
+rag:
+  web_fallback:
+    enabled: true           # 本地高相关结果不足时自动补充网络搜索
+    min_local_results: 1    # 本地「高相关」结果少于该数量时触发 web 搜索
+    web_results: 3          # fallback 搜索结果数
+  ai_answer:
+    enabled: true                 # 知识不足时仍由 AI 综合生成答案（默认开启，永不返回空答案）
+    high_relevance_threshold: 0.6 # 相关度超过此值才视为「高相关」；低于时触发 web 补充
+    allow_llm_knowledge: true     # 允许 AI 结合自身通用知识补充（非纯检索模式）

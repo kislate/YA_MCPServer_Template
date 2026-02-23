@@ -430,6 +430,199 @@ async def list_knowledge(tag_filter: str = "", limit: int = 100) -> Dict[str, An
         raise RuntimeError(f"列出知识失败: {e}")
 
 
+async def update_knowledge(
+    knowledge_id: str,
+    content: Optional[str] = None,
+    title: Optional[str] = None,
+    tags: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    更新知识条目。
+
+    - 只改 title/tags：直接更新所有 chunk 的 metadata，不重新向量化。
+    - 改了 content：删除旧 chunk，用新内容重新分块并索引，保留同一 base_id。
+
+    Args:
+        knowledge_id (str): 知识 base_id。
+        content (Optional[str]): 新内容（None 表示不修改内容）。
+        title (Optional[str]): 新标题（None 表示不修改）。
+        tags (Optional[str]): 新标签，逗号分隔（None 表示不修改）。
+
+    Returns:
+        Dict[str, Any]: 更新后的摘要信息。
+    """
+    def _sync_update():
+        collection = get_collection()
+        results = collection.get(where={"base_id": knowledge_id})
+        if not results["ids"]:
+            raise ValueError(f"未找到 ID '{knowledge_id}'")
+
+        # 从现有 metadata 取当前值
+        cur_meta = results["metadatas"][0]
+        new_title = title if title is not None else cur_meta.get("title", "")
+        new_tags_str = tags if tags is not None else cur_meta.get("tags", "")
+        new_tag_list = [t.strip() for t in new_tags_str.split(",") if t.strip()]
+
+        if content is not None:
+            # ── 内容变更：删除旧 chunk，重新分块索引，保留 base_id ──
+            collection.delete(ids=results["ids"])
+            _delete_raw_markdown(knowledge_id)
+
+            from core.document_processor import split_text
+            chunk_size = get_config("knowledge.chunking.chunk_size", 500)
+            chunk_overlap = get_config("knowledge.chunking.chunk_overlap", 100)
+            chunks = split_text(content, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+            raw_file = _save_raw_markdown(knowledge_id, content, new_title, new_tag_list, cur_meta.get("source", ""))
+
+            ids, documents, metadatas = [], [], []
+            for i, chunk in enumerate(chunks):
+                ids.append(f"{knowledge_id}_chunk{i}")
+                documents.append(chunk)
+                metadatas.append({
+                    "title": new_title,
+                    "tags": ",".join(new_tag_list),
+                    "source": cur_meta.get("source", ""),
+                    "base_id": knowledge_id,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                    "raw_file": raw_file,
+                })
+
+            BATCH_SIZE = 10
+            for batch_start in range(0, len(ids), BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, len(ids))
+                collection.add(
+                    ids=ids[batch_start:batch_end],
+                    documents=documents[batch_start:batch_end],
+                    metadatas=metadatas[batch_start:batch_end],
+                )
+
+            return {
+                "id": knowledge_id,
+                "title": new_title,
+                "tags": new_tag_list,
+                "chunks_count": len(chunks),
+                "updated_fields": ["content", "title", "tags"],
+                "message": "知识内容已更新并重新索引",
+            }
+        else:
+            # ── 仅更新 metadata（title / tags）──
+            new_metadatas = []
+            for m in results["metadatas"]:
+                m = dict(m)
+                m["title"] = new_title
+                m["tags"] = ",".join(new_tag_list)
+                new_metadatas.append(m)
+
+            collection.update(ids=results["ids"], metadatas=new_metadatas)
+
+            # 同步更新磁盘 Markdown frontmatter
+            raw_path = Path(_get_raw_file_path(knowledge_id))
+            if raw_path.exists():
+                old_text = raw_path.read_text(encoding="utf-8")
+                # 替换 frontmatter 中的 title 和 tags
+                import re
+                old_text = re.sub(r"^title: .+$", f"title: {new_title}", old_text, flags=re.MULTILINE)
+                old_text = re.sub(r"^tags: \[.*\]$", f"tags: [{', '.join(new_tag_list)}]", old_text, flags=re.MULTILINE)
+                raw_path.write_text(old_text, encoding="utf-8")
+
+            updated = [f for f in ["title", "tags"] if (title if f == "title" else tags) is not None]
+            return {
+                "id": knowledge_id,
+                "title": new_title,
+                "tags": new_tag_list,
+                "chunks_count": len(results["ids"]),
+                "updated_fields": updated,
+                "message": f"已更新 {len(results['ids'])} 个片段的 metadata",
+            }
+
+    try:
+        return await asyncio.to_thread(_sync_update)
+    except ValueError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"更新知识失败: {e}")
+
+
+async def export_knowledge(
+    tag_filter: str = "",
+    output_path: str = "",
+    fmt: str = "markdown",
+) -> Dict[str, Any]:
+    """
+    导出知识库内容为 Markdown 合并文件或 ZIP 压缩包。
+
+    Args:
+        tag_filter (str): 按标签过滤（空 = 导出全部）。
+        output_path (str): 输出路径（留空则自动生成到 data/exports/）。
+        fmt (str): 导出格式，"markdown"（单文件）或 "zip"（每条一个文件打包）。
+
+    Returns:
+        Dict[str, Any]: 导出结果，含输出路径和条目数。
+    """
+    import shutil
+    import zipfile
+    from datetime import datetime
+
+    EXPORT_DIR = Path(get_config("knowledge.export.output_dir", "./data/exports"))
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _sync_export():
+        collection = get_collection()
+        get_params: Dict[str, Any] = {"limit": collection.count() or 1}
+        if tag_filter:
+            get_params["where"] = {"tags": {"$contains": tag_filter}}
+        results = collection.get(**get_params)
+
+        # 去重
+        seen: Dict[str, Dict] = {}
+        for i, meta in enumerate(results["metadatas"]):
+            bid = meta.get("base_id", results["ids"][i])
+            if bid not in seen:
+                seen[bid] = meta
+
+        return list(seen.values())
+
+    items = await asyncio.to_thread(_sync_export)
+    if not items:
+        return {"message": "没有符合条件的知识条目", "count": 0, "output_path": ""}
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag_suffix = f"_{tag_filter.replace(',', '_')}" if tag_filter else ""
+
+    if fmt == "zip":
+        out_path = Path(output_path) if output_path else EXPORT_DIR / f"export{tag_suffix}_{ts}.zip"
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for meta in items:
+                bid = meta.get("base_id", "")
+                raw_path = Path(_get_raw_file_path(bid))
+                if raw_path.exists():
+                    zf.write(raw_path, arcname=raw_path.name)
+                att = _get_attachment_path(bid)
+                if att:
+                    zf.write(Path(att), arcname=Path(att).name)
+    else:
+        # 单 Markdown 文件
+        out_path = Path(output_path) if output_path else EXPORT_DIR / f"export{tag_suffix}_{ts}.md"
+        sections = [f"# 知识库导出\n\n生成时间：{ts}，共 {len(items)} 条\n\n---\n"]
+        for meta in items:
+            bid = meta.get("base_id", "")
+            raw_path = Path(_get_raw_file_path(bid))
+            if raw_path.exists():
+                sections.append(raw_path.read_text(encoding="utf-8"))
+                sections.append("\n\n---\n")
+        out_path.write_text("\n".join(sections), encoding="utf-8")
+
+    logger.info(f"知识库导出完成: {out_path}, {len(items)} 条")
+    return {
+        "count": len(items),
+        "format": fmt,
+        "output_path": str(out_path),
+        "message": f"已导出 {len(items)} 条知识到 {out_path}",
+    }
+
+
 async def get_knowledge(knowledge_id: str) -> Dict[str, Any]:
     """
     获取指定 ID 的笔记原始 Markdown 内容，并在附录中标注原始附件信息。
