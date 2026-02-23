@@ -4,6 +4,7 @@ LLM 服务模块 - DeepSeek
 提供以下功能：
 - chat_with_llm: 调用 DeepSeek API 进行对话
 - generate_metadata: 调用 AI 自动生成知识的标题、标签、来源类型
+- summarize_content: 调用 AI 对文档内容生成结构化摘要总结
 """
 
 import asyncio
@@ -185,3 +186,82 @@ async def generate_metadata(content: str) -> Dict[str, str]:
         return {"title": "未命名", "tags": "", "source": "用户笔记"}
     except Exception as e:
         raise RuntimeError(f"AI 生成元数据失败: {e}")
+
+
+SUMMARY_SYSTEM_PROMPT = """你是一个专业的文档总结助手。请根据用户提供的文档内容，生成一份结构化的 Markdown 摘要。
+
+## 要求：
+1. 摘要应包含：文档主题、核心要点（3-7 条）、关键结论
+2. 使用 Markdown 格式，层次清晰
+3. 语言简洁精炼，保留关键信息
+4. 如果内容包含数据或案例，适当引用
+5. 摘要长度控制在 300-800 字
+
+## 输出格式：
+# 📄 文档摘要：{文档标题}
+
+## 主题概述
+（一句话概括文档主题）
+
+## 核心要点
+- 要点 1
+- 要点 2
+- ...
+
+## 关键结论
+（总结性结论）
+"""
+
+
+async def summarize_content(content: str, title: str = "") -> str:
+    """
+    调用 DeepSeek 对文档内容生成结构化 Markdown 摘要。
+
+    Args:
+        content (str): 文档原文内容。
+        title (str): 文档标题（用于提示 AI）。
+
+    Returns:
+        str: Markdown 格式的摘要文本。
+    """
+    # 截取前 6000 字，平衡摘要质量和 token 消耗
+    preview = content[:6000]
+    logger.info(f"AI 生成摘要，内容预览长度: {len(preview)}, 标题: {title}")
+
+    try:
+        api_key = await asyncio.to_thread(_get_api_key)
+        base_url = get_config("llm.deepseek.base_url", "https://api.deepseek.com")
+        model = get_config("llm.deepseek.model", "deepseek-chat")
+    except Exception as e:
+        logger.warning(f"读取 LLM 配置失败，跳过摘要生成: {e}")
+        return ""
+
+    try:
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+        user_msg = f"请为以下文档生成摘要：\n\n"
+        if title:
+            user_msg += f"文档标题：{title}\n\n"
+        user_msg += f"文档内容：\n{preview}"
+
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=1024,
+            temperature=0.5,
+        )
+
+        summary = response.choices[0].message.content.strip()
+        usage = response.usage
+        logger.info(
+            f"AI 摘要生成成功，长度: {len(summary)}，"
+            f"Token: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}"
+        )
+        return summary
+
+    except Exception as e:
+        logger.warning(f"AI 摘要生成失败，跳过: {e}")
+        return ""

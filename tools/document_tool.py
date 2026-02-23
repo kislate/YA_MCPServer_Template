@@ -75,6 +75,15 @@ async def import_pdf(
     result['original_path'] = parsed['metadata']['file_path']
     result['attachment_path'] = attachment_path if attachment_path else "未保存"
     
+    # AI 生成文档摘要
+    try:
+        from core.llm_service import summarize_content
+        summary = await summarize_content(parsed['content'], final_title)
+        if summary:
+            result['ai_summary'] = summary
+    except Exception as e:
+        result['ai_summary'] = f"摘要生成失败: {e}"
+    
     return result
 
 
@@ -141,6 +150,15 @@ async def import_pptx(
     result['pptx_slides'] = parsed['metadata']['slides']
     result['original_path'] = parsed['metadata']['file_path']
     result['attachment_path'] = attachment_path if attachment_path else "未保存"
+
+    # AI 生成文档摘要
+    try:
+        from core.llm_service import summarize_content
+        summary = await summarize_content(parsed['content'], final_title)
+        if summary:
+            result['ai_summary'] = summary
+    except Exception as e:
+        result['ai_summary'] = f"摘要生成失败: {e}"
 
     return result
 
@@ -209,6 +227,15 @@ async def import_docx(
     result['docx_tables'] = parsed['metadata']['tables']
     result['original_path'] = parsed['metadata']['file_path']
     result['attachment_path'] = attachment_path if attachment_path else "未保存"
+
+    # AI 生成文档摘要
+    try:
+        from core.llm_service import summarize_content
+        summary = await summarize_content(parsed['content'], final_title)
+        if summary:
+            result['ai_summary'] = summary
+    except Exception as e:
+        result['ai_summary'] = f"摘要生成失败: {e}"
 
     return result
 
@@ -286,6 +313,15 @@ async def import_webpage(
     # 添加网页特有的元数据
     result['url'] = parsed['metadata']['url']
     
+    # AI 生成文档摘要
+    try:
+        from core.llm_service import summarize_content
+        summary = await summarize_content(parsed['content'], final_title)
+        if summary:
+            result['ai_summary'] = summary
+    except Exception as e:
+        result['ai_summary'] = f"摘要生成失败: {e}"
+    
     return result
 
 
@@ -323,8 +359,8 @@ async def import_document(
     except ImportError as e:
         raise RuntimeError(f"导入失败: {e}")
     
-    # 清理输入（去除空格和换行符）
-    source = source.strip()
+    # 清理输入（去除空格、换行符和引号）
+    source = source.strip().strip('"').strip("'")
     
     # 自动选择解析器
     factory = DocumentParserFactory()
@@ -357,5 +393,14 @@ async def import_document(
     # 添加文档类型特有的元数据
     result['doc_type'] = doc_type
     result['metadata'] = parsed['metadata']
+    
+    # AI 生成文档摘要
+    try:
+        from core.llm_service import summarize_content
+        summary = await summarize_content(parsed['content'], final_title)
+        if summary:
+            result['ai_summary'] = summary
+    except Exception as e:
+        result['ai_summary'] = f"摘要生成失败: {e}"
     
     return result
