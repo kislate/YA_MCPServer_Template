@@ -430,6 +430,74 @@ async def list_knowledge(tag_filter: str = "", limit: int = 100) -> Dict[str, An
         raise RuntimeError(f"列出知识失败: {e}")
 
 
+async def get_knowledge(knowledge_id: str) -> Dict[str, Any]:
+    """
+    获取指定 ID 的笔记原始 Markdown 内容，并在附录中标注原始附件信息。
+
+    Args:
+        knowledge_id (str): 知识 base_id（如 kb_09572213）。
+
+    Returns:
+        Dict[str, Any]: 包含 markdown 原文和附件信息。
+    """
+    def _sync_get():
+        collection = get_collection()
+        results = collection.get(where={"base_id": knowledge_id}, limit=1)
+        if not results["ids"]:
+            raise ValueError(f"未找到 ID '{knowledge_id}'")
+
+        meta = results["metadatas"][0]
+
+        # 读取原始 Markdown 文件
+        raw_path = meta.get("raw_file", "") or _get_raw_file_path(knowledge_id)
+        if not raw_path or not Path(raw_path).exists():
+            raise FileNotFoundError(f"原始 Markdown 文件不存在: {raw_path}")
+
+        content = Path(raw_path).read_text(encoding="utf-8")
+
+        # 检查是否有原始附件
+        attachment_path = _get_attachment_path(knowledge_id)
+        attachment_info = None
+        if attachment_path:
+            att = Path(attachment_path)
+            size_kb = round(att.stat().st_size / 1024, 1)
+            attachment_info = {
+                "path": attachment_path,
+                "filename": att.name,
+                "type": att.suffix.lstrip(".").upper(),
+                "size_kb": size_kb,
+        }
+
+        # 构造带附录的完整 Markdown
+        output = content
+        if attachment_info:
+            output += (
+                "\n\n---\n\n"
+                "## 附录：原始文件\n\n"
+                f"- **文件名**：`{attachment_info['filename']}`\n"
+                f"- **格式**：{attachment_info['type']}\n"
+                f"- **大小**：{attachment_info['size_kb']} KB\n"
+                f"- **路径**：`{attachment_info['path']}`\n"
+            )
+
+        return {
+            "id": knowledge_id,
+            "title": meta.get("title", ""),
+            "tags": meta.get("tags", ""),
+            "source": meta.get("source", ""),
+            "raw_file": raw_path,
+            "attachment": attachment_info,
+            "markdown": output,
+        }
+
+    try:
+        return await asyncio.to_thread(_sync_get)
+    except (ValueError, FileNotFoundError):
+        raise
+    except Exception as e:
+        raise RuntimeError(f"获取知识失败: {e}")
+
+
 async def delete_knowledge(knowledge_id: str) -> Dict[str, str]:
     """
     删除知识。

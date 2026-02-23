@@ -390,10 +390,34 @@ async def import_document(
         source=source_info
     )
     
+    # 保存原始文件副本（网页保存 HTML 快照）
+    from core.knowledge_store import _save_attachment
+    attachment_path = ""
+    if doc_type in ('pdf', 'pptx', 'docx'):
+        attachment_path = _save_attachment(
+            base_id=result['id'],
+            source_path=parsed['metadata']['file_path'],
+            doc_type=doc_type,
+        )
+    elif doc_type == 'webpage' and parsed['metadata'].get('html_content'):
+        from pathlib import Path
+        temp_html_path = Path(f"./temp_{result['id']}.html")
+        try:
+            temp_html_path.write_text(parsed['metadata']['html_content'], encoding='utf-8')
+            attachment_path = _save_attachment(
+                base_id=result['id'],
+                source_path=str(temp_html_path),
+                doc_type='html',
+            )
+        finally:
+            if temp_html_path.exists():
+                temp_html_path.unlink()
+    result['attachment_path'] = attachment_path if attachment_path else "未保存"
+
     # 添加文档类型特有的元数据
     result['doc_type'] = doc_type
     result['metadata'] = parsed['metadata']
-    
+
     # AI 生成文档摘要
     try:
         from core.llm_service import summarize_content

@@ -81,6 +81,26 @@ async def list_knowledge(tag_filter: str = "", limit: int = 100) -> Dict[str, An
 
 
 @YA_MCPServer_Tool(
+    name="get_knowledge",
+    title="Get Knowledge Markdown",
+    description="获取指定 ID 笔记的 Markdown 原文。若该笔记有原始附件（PDF、DOCX 等），在附录中标注文件名、格式、大小和路径",
+)
+async def get_knowledge(knowledge_id: str) -> Dict[str, Any]:
+    """获取知识原始 Markdown 内容。
+
+    Args:
+        knowledge_id (str): 知识 ID（如 kb_09572213）。
+    Returns:
+        Dict[str, Any]: 包含 markdown 原文字段，以及 attachment 附件信息（若有）。
+    """
+    try:
+        from core.knowledge_store import get_knowledge as _get
+    except ImportError as e:
+        raise RuntimeError(f"导入失败: {e}")
+    return await _get(knowledge_id=knowledge_id)
+
+
+@YA_MCPServer_Tool(
     name="delete_knowledge",
     title="Delete Knowledge",
     description="删除指定的知识条目",
